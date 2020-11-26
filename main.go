@@ -79,11 +79,25 @@ func NewHttpServer(addr string, logger *log.Logger) *http.Server {
 
 		err := json.NewDecoder(req.Body).Decode(&input)
 		if err != nil {
-			responseWithError(wr, fmt.Errorf("unmarshal body error: %s", err.Error()), http.StatusInternalServerError)
+			responseWithError(wr, fmt.Errorf("unmarshal body error: %s", err.Error()), http.StatusBadRequest)
+			return
+		}
+
+		// error in case of empty URLs list
+		if len(input.Urls) == 0 {
+			responseWithError(wr, fmt.Errorf("empty URLs list"), http.StatusBadRequest)
 			return
 		}
 
 		input.Urls = removeDuplicates(input.Urls)
+
+		// validate all the URLs
+		for i := range input.Urls {
+			if !IsURL(input.Urls[i]) {
+				responseWithError(wr, fmt.Errorf("there is an invalid URL: %s", input.Urls[i]), http.StatusBadRequest)
+				return
+			}
+		}
 
 		if len(input.Urls) > maxInputUrls {
 			responseWithError(wr, fmt.Errorf("urls count exceeded, max 20, received %d", len(input.Urls)), http.StatusBadRequest)
@@ -247,7 +261,7 @@ func grabData(ctx context.Context, responseChan chan *GrabResponse, errChan chan
 
 				timeoutCtx, _ := context.WithTimeout(ctx, 1*time.Second)
 
-				req, err := http.NewRequestWithContext(timeoutCtx, "GET", url, nil)
+				req, err := http.NewRequestWithContext(timeoutCtx, http.MethodGet, url, nil)
 				if err != nil {
 					resultsChan <- &Result{url, nil, err}
 					return
